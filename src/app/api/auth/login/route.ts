@@ -38,6 +38,7 @@ export async function POST(request) {
       "unknown";
 
     if (isRateLimited(clientIp)) {
+      recordAttempt(clientIp);
       return NextResponse.json(
         { error: "Too many login attempts. Try again later." },
         { status: 429 }
