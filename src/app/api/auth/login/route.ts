@@ -5,6 +5,7 @@ import { SignJWT } from "jose";
 import { cookies } from "next/headers";
 import { loginSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
+import { getClientIpFromRequest } from "@/lib/ipUtils";
 
 // SECURITY: No hardcoded fallback — JWT_SECRET must be configured.
 if (!process.env.JWT_SECRET) {
@@ -14,7 +15,17 @@ const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 const loginAttempts = new Map<string, number[]>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of loginAttempts) {
+    const active = timestamps.filter((t) => now - t < LOGIN_WINDOW_MS);
+    if (active.length === 0) loginAttempts.delete(ip);
+    else loginAttempts.set(ip, active);
+  }
+}, LOGIN_CLEANUP_INTERVAL_MS).unref();
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -32,13 +43,9 @@ function recordAttempt(ip: string): void {
 
 export async function POST(request) {
   try {
-    const clientIp =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
+    const clientIp = getClientIpFromRequest(request);
 
     if (isRateLimited(clientIp)) {
-      recordAttempt(clientIp);
       return NextResponse.json(
         { error: "Too many login attempts. Try again later." },
         { status: 429 }
