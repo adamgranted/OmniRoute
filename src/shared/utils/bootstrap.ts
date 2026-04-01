@@ -38,3 +38,13 @@ export function getBootstrapBaseUrl(request: Request): string {
 export function quoteShellValue(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
+
+export function injectBootstrapTemplate(
+  template: string,
+  baseUrl: string,
+  version: string
+): string {
+  return template
+    .replace("# %%OMNIROUTE_URL%%", () => `OMNIROUTE_URL=${quoteShellValue(baseUrl)}`)
+    .replace("%%VERSION%%", () => version);
+}

@@ -4,7 +4,7 @@ import { APP_CONFIG } from "@/shared/constants/config";
 import {
   deriveBootstrapToken,
   getBootstrapBaseUrl,
-  quoteShellValue,
+  injectBootstrapTemplate,
 } from "@/shared/utils/bootstrap";
 
 const SCRIPT_TEMPLATE = loadScript();
@@ -30,11 +30,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   }
 
   const baseUrl = getBootstrapBaseUrl(request);
-
-  const script = SCRIPT_TEMPLATE.replace(
-    "# %%OMNIROUTE_URL%%",
-    `OMNIROUTE_URL=${quoteShellValue(baseUrl)}`
-  ).replace("%%VERSION%%", APP_CONFIG.version || "dev");
+  const script = injectBootstrapTemplate(SCRIPT_TEMPLATE, baseUrl, APP_CONFIG.version || "dev");
 
   return new Response(script, {
     headers: {

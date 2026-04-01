@@ -83,3 +83,14 @@ test("quoteShellValue prevents command substitution in shell output", async () =
   );
   assert.equal(quoteShellValue("contains'single-quote"), `'contains'"'"'single-quote'`);
 });
+
+test("injectBootstrapTemplate preserves literal $ replacement patterns", async () => {
+  const { injectBootstrapTemplate, quoteShellValue } =
+    await import("../../src/shared/utils/bootstrap.ts");
+
+  const template = "# %%OMNIROUTE_URL%%\nversion=%%VERSION%%\n";
+  const baseUrl = "https://example.com/$&/$`/$'/path";
+  const rendered = injectBootstrapTemplate(template, baseUrl, "3.4.1");
+
+  assert.equal(rendered, `OMNIROUTE_URL=${quoteShellValue(baseUrl)}\nversion=3.4.1\n`);
+});
