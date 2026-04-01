@@ -40,6 +40,9 @@ const PUBLIC_API_ROUTES = [
 
   // OAuth callback routes — provider redirects back here
   "/api/oauth/",
+
+  // Bootstrap script — token-gated, serves a bash setup script
+  "/api/bootstrap/",
 ];
 
 // ──────────────── Auth Verification ────────────────
