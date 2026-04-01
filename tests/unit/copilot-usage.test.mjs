@@ -2,12 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const usageService = await import("../../open-sse/services/usage.ts");
-const providerLimitUtils = await import(
-  "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.tsx"
-);
+const providerLimitUtils =
+  await import("../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.tsx");
 
 test("github copilot business seats infer business plan and hide unlimited buckets", async () => {
   const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  const frozenNow = Date.parse("2026-03-15T00:00:00Z");
+
+  Date.now = () => frozenNow;
 
   globalThis.fetch = async () =>
     new Response(
@@ -50,6 +53,7 @@ test("github copilot business seats infer business plan and hide unlimited bucke
     assert.equal(parsed[0].remainingPercentage, 60);
     assert.equal(providerLimitUtils.normalizePlanTier(usage.plan).key, "business");
   } finally {
+    Date.now = originalDateNow;
     globalThis.fetch = originalFetch;
   }
 });

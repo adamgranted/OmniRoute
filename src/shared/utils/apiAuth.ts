@@ -10,6 +10,7 @@
 import { jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
+import { isPublicBootstrapScriptPath } from "@/shared/utils/bootstrap";
 
 // ──────────────── Public Routes (No Auth Required) ────────────────
 
@@ -40,9 +41,6 @@ const PUBLIC_API_ROUTES = [
 
   // OAuth callback routes — provider redirects back here
   "/api/oauth/",
-
-  // Bootstrap script — token-gated, serves a bash setup script
-  "/api/bootstrap/",
 ];
 
 // ──────────────── Auth Verification ────────────────
@@ -130,7 +128,10 @@ export async function isAuthenticated(request: Request): Promise<boolean> {
  * Check if a route is in the public (no-auth) allowlist.
  */
 export function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route));
+  return (
+    PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route)) ||
+    isPublicBootstrapScriptPath(pathname)
+  );
 }
 
 /**

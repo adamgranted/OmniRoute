@@ -1,16 +1,13 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_CONFIG } from "@/shared/constants/config";
+import {
+  deriveBootstrapToken,
+  getBootstrapBaseUrl,
+  quoteShellValue,
+} from "@/shared/utils/bootstrap";
 
-const BOOTSTRAP_TOKEN = deriveBootstrapToken();
 const SCRIPT_TEMPLATE = loadScript();
-
-function deriveBootstrapToken(): string {
-  const secret = process.env.API_KEY_SECRET || process.env.JWT_SECRET || "";
-  if (!secret) return "";
-  return createHash("sha256").update(`omniroute-bootstrap:${secret}`).digest("hex").slice(0, 16);
-}
 
 function loadScript(): string {
   try {
@@ -20,13 +17,11 @@ function loadScript(): string {
   }
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ token: string }> }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const bootstrapToken = deriveBootstrapToken();
 
-  if (!BOOTSTRAP_TOKEN || token !== BOOTSTRAP_TOKEN) {
+  if (!bootstrapToken || token !== bootstrapToken) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -34,17 +29,12 @@ export async function GET(
     return new Response("Bootstrap script not found", { status: 500 });
   }
 
-  const host =
-    _request.headers.get("x-forwarded-host") ||
-    _request.headers.get("host") ||
-    "localhost:20128";
-  const proto =
-    _request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || "http";
-  const baseUrl = `${proto}://${host}`;
+  const baseUrl = getBootstrapBaseUrl(request);
 
-  const script = SCRIPT_TEMPLATE
-    .replace("# %%OMNIROUTE_URL%%", `OMNIROUTE_URL="${baseUrl}"`)
-    .replace("%%VERSION%%", APP_CONFIG.version || "dev");
+  const script = SCRIPT_TEMPLATE.replace(
+    "# %%OMNIROUTE_URL%%",
+    `OMNIROUTE_URL=${quoteShellValue(baseUrl)}`
+  ).replace("%%VERSION%%", APP_CONFIG.version || "dev");
 
   return new Response(script, {
     headers: {

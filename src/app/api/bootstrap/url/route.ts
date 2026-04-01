@@ -1,32 +1,27 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { isAuthenticated } from "@/shared/utils/apiAuth";
+import {
+  deriveBootstrapToken,
+  getBootstrapBaseUrl,
+  quoteShellValue,
+} from "@/shared/utils/bootstrap";
 
 export async function GET(request: Request) {
   if (!(await isAuthenticated(request))) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const secret = process.env.API_KEY_SECRET || process.env.JWT_SECRET || "";
-  if (!secret) {
+  const token = deriveBootstrapToken();
+  if (!token) {
     return NextResponse.json({ error: "No API_KEY_SECRET configured" }, { status: 500 });
   }
 
-  const token = createHash("sha256")
-    .update(`omniroute-bootstrap:${secret}`)
-    .digest("hex")
-    .slice(0, 16);
-
-  const host =
-    request.headers.get("x-forwarded-host") ||
-    request.headers.get("host") ||
-    "localhost:20128";
-  const proto =
-    request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || "http";
+  const baseUrl = getBootstrapBaseUrl(request);
+  const scriptUrl = `${baseUrl}/api/bootstrap/${token}`;
 
   return NextResponse.json({
     token,
-    url: `${proto}://${host}/api/bootstrap/${token}`,
-    curl: `curl -fsSL ${proto}://${host}/api/bootstrap/${token} | bash`,
+    url: scriptUrl,
+    curl: `curl -fsSL ${quoteShellValue(scriptUrl)} | bash`,
   });
 }

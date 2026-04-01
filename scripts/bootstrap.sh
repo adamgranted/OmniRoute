@@ -212,7 +212,7 @@ for tool in "${SELECTED[@]}"; do
     codex)
       say "Configuring Codex CLI..."
       # Clean up deprecated env vars from previous bootstrap runs
-      for old_var in OPENAI_BASE_URL OPENAI_API_KEY; do
+      for old_var in OPENAI_BASE_URL; do
         if grep -q "^export ${old_var}=" "${PROFILE}" 2>/dev/null; then
           grep -v "^export ${old_var}=" "${PROFILE}" > "${PROFILE}.omniroute-tmp"
           mv "${PROFILE}.omniroute-tmp" "${PROFILE}"
@@ -232,22 +232,33 @@ env_key = \"OMNIROUTE_API_KEY\"
 [profiles.default]
 model_provider = \"omniroute\"
 model = \"${MODEL}\""
+      CODEX_CONFIG_WRITABLE=true
 
       if [ -f "${CODEX_CONFIG}" ]; then
         if grep -q '\[model_providers\.omniroute\]' "${CODEX_CONFIG}" 2>/dev/null; then
           say "  Updating existing OmniRoute config in ${CODEX_CONFIG}"
-          python3 -c "
+          if ! command -v python3 &>/dev/null; then
+            warn "  python3 is required to update existing Codex config safely."
+            warn "  Skipping Codex config rewrite to avoid duplicate TOML sections."
+            CODEX_CONFIG_WRITABLE=false
+          elif ! python3 -c "
 import re
 with open('${CODEX_CONFIG}') as f: txt = f.read()
 txt = re.sub(r'\n*\[model_providers\.omniroute\][^\[]*', '', txt)
 txt = re.sub(r'^model_provider\s*=\s*\"omniroute\"\n?', '', txt, flags=re.MULTILINE)
 txt = re.sub(r'\n*\[profiles\.default\][^\[]*', '', txt)
 with open('${CODEX_CONFIG}', 'w') as f: f.write(txt.strip() + '\n')
-" 2>/dev/null || warn "  Could not remove old block. Edit ${CODEX_CONFIG} manually."
+" 2>/dev/null; then
+            warn "  Could not remove old OmniRoute block from ${CODEX_CONFIG}."
+            warn "  Skipping Codex config rewrite to avoid duplicate TOML sections."
+            CODEX_CONFIG_WRITABLE=false
+          fi
         fi
-        echo "" >> "${CODEX_CONFIG}"
-        echo "${PROVIDER_BLOCK}" >> "${CODEX_CONFIG}"
-        say "  Written OmniRoute config to ${CODEX_CONFIG}"
+        if [ "${CODEX_CONFIG_WRITABLE}" = true ]; then
+          echo "" >> "${CODEX_CONFIG}"
+          echo "${PROVIDER_BLOCK}" >> "${CODEX_CONFIG}"
+          say "  Written OmniRoute config to ${CODEX_CONFIG}"
+        fi
       else
         echo "${PROVIDER_BLOCK}" > "${CODEX_CONFIG}"
         say "  Created ${CODEX_CONFIG}"
@@ -291,8 +302,8 @@ echo ""
 
 if [ "${PROFILE_MODIFIED}" = true ]; then
   warn "Shell profile updated (${PROFILE})."
-  warn "If env vars aren't picked up, run: source ${PROFILE}"
+  warn "Open a new shell or run this in your current shell:"
+  echo "  source ${PROFILE}"
   echo ""
-  warn "Spawning a new shell with env vars loaded..."
-  exec "${SHELL:-bash}" -l
+  warn "If a CLI already has its own login session, you may still need to log out first."
 fi
