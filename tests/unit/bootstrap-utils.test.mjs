@@ -51,6 +51,20 @@ test("deriveBootstrapToken falls back to JWT_SECRET and returns null with no sec
   });
 });
 
+test("isBootstrapTokenMatch uses the current derived token and rejects mismatches", async () => {
+  const { deriveBootstrapToken, isBootstrapTokenMatch } =
+    await import("../../src/shared/utils/bootstrap.ts");
+
+  await withEnv({ API_KEY_SECRET: "match-secret", JWT_SECRET: undefined }, async () => {
+    const expected = deriveBootstrapToken();
+    assert.ok(expected, "expected bootstrap token");
+    assert.equal(isBootstrapTokenMatch(expected), true);
+    assert.equal(isBootstrapTokenMatch("0".repeat(expected.length)), false);
+    assert.equal(isBootstrapTokenMatch(`${expected}extra`), false);
+    assert.equal(isBootstrapTokenMatch(undefined), false);
+  });
+});
+
 test("isPublicBootstrapScriptPath only exposes tokenized bootstrap script routes", async () => {
   const { isPublicBootstrapScriptPath } = await import("../../src/shared/utils/bootstrap.ts");
 

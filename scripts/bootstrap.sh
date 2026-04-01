@@ -167,8 +167,22 @@ PROFILE=$(detect_profile)
 PROFILE_MODIFIED=false
 ENVS_WRITTEN=()
 
+quote_for_shell_profile() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\"'\"'/g")"
+}
+
+escape_toml_basic_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/ }"
+  value="${value//$'\r'/ }"
+  printf '%s' "$value"
+}
+
 add_env_to_profile() {
   local var_name="$1" var_value="$2"
+  local quoted_value
 
   for written in "${ENVS_WRITTEN[@]+"${ENVS_WRITTEN[@]}"}"; do
     if [ "${written}" = "${var_name}=${var_value}" ]; then
@@ -180,7 +194,8 @@ add_env_to_profile() {
     grep -v "^export ${var_name}=" "${PROFILE}" > "${PROFILE}.omniroute-tmp"
     mv "${PROFILE}.omniroute-tmp" "${PROFILE}"
   fi
-  echo "export ${var_name}=\"${var_value}\"" >> "${PROFILE}"
+  quoted_value="$(quote_for_shell_profile "${var_value}")"
+  printf 'export %s=%s\n' "${var_name}" "${quoted_value}" >> "${PROFILE}"
   ENVS_WRITTEN+=("${var_name}=${var_value}")
   PROFILE_MODIFIED=true
 }
@@ -221,44 +236,141 @@ for tool in "${SELECTED[@]}"; do
       done
       mkdir -p "${HOME}/.codex"
       CODEX_CONFIG="${HOME}/.codex/config.toml"
+      CODEX_BASE_URL="$(escape_toml_basic_string "${OMNIROUTE_URL}/v1")"
+      CODEX_MODEL="$(escape_toml_basic_string "${MODEL}")"
       PROVIDER_BLOCK="model_provider = \"omniroute\"
-
-[model_providers.omniroute]
-name = \"OmniRoute\"
-base_url = \"${OMNIROUTE_URL}/v1\"
-wire_api = \"responses\"
-env_key = \"OMNIROUTE_API_KEY\"
 
 [profiles.default]
 model_provider = \"omniroute\"
-model = \"${MODEL}\""
+model = \"${CODEX_MODEL}\"
+
+[model_providers.omniroute]
+name = \"OmniRoute\"
+base_url = \"${CODEX_BASE_URL}\"
+wire_api = \"responses\"
+env_key = \"OMNIROUTE_API_KEY\""
       CODEX_CONFIG_WRITABLE=true
 
-      if [ -f "${CODEX_CONFIG}" ]; then
-        if grep -q '\[model_providers\.omniroute\]' "${CODEX_CONFIG}" 2>/dev/null; then
+      if command -v python3 &>/dev/null; then
+        if [ -f "${CODEX_CONFIG}" ]; then
           say "  Updating existing OmniRoute config in ${CODEX_CONFIG}"
-          if ! command -v python3 &>/dev/null; then
-            warn "  python3 is required to update existing Codex config safely."
-            warn "  Skipping Codex config rewrite to avoid duplicate TOML sections."
-            CODEX_CONFIG_WRITABLE=false
-          elif ! python3 -c "
+        else
+          say "  Creating ${CODEX_CONFIG}"
+        fi
+        if ! python3 - "${CODEX_CONFIG}" "${OMNIROUTE_URL}/v1" "${MODEL}" >/dev/null 2>&1 <<'PY'
+from pathlib import Path
+import json
 import re
-with open('${CODEX_CONFIG}') as f: txt = f.read()
-txt = re.sub(r'\n*\[model_providers\.omniroute\][^\[]*', '', txt)
-txt = re.sub(r'^model_provider\s*=\s*\"omniroute\"\n?', '', txt, flags=re.MULTILINE)
-txt = re.sub(r'\n*\[profiles\.default\][^\[]*', '', txt)
-with open('${CODEX_CONFIG}', 'w') as f: f.write(txt.strip() + '\n')
-" 2>/dev/null; then
-            warn "  Could not remove old OmniRoute block from ${CODEX_CONFIG}."
-            warn "  Skipping Codex config rewrite to avoid duplicate TOML sections."
-            CODEX_CONFIG_WRITABLE=false
-          fi
+import sys
+
+config_path = Path(sys.argv[1])
+base_url = sys.argv[2]
+model = sys.argv[3]
+
+if config_path.exists():
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+else:
+    lines = []
+
+sections = []
+header = None
+body = []
+header_pattern = re.compile(r'^(\[\[?[^\]]+\]\]?)(?:\s+#.*)?$')
+for line in lines:
+    stripped = line.strip()
+    header_match = header_pattern.match(stripped)
+    if header_match:
+        sections.append((header, body))
+        header = header_match.group(1)
+        body = []
+    else:
+        body.append(line)
+sections.append((header, body))
+
+def is_root_model_provider(line: str) -> bool:
+    return re.match(r'^\s*model_provider\s*=', line) is not None
+
+def is_default_profile_key(line: str) -> bool:
+    return re.match(r'^\s*(model_provider|model)\s*=', line) is not None
+
+def merge_default_lines(target, new_lines):
+    key_pattern = re.compile(r'^\s*([A-Za-z0-9_.-]+)\s*=')
+    for line in new_lines:
+        match = key_pattern.match(line)
+        if match:
+            key = match.group(1)
+            target[:] = [
+                existing
+                for existing in target
+                if key_pattern.match(existing) is None or key_pattern.match(existing).group(1) != key
+            ]
+        target.append(line)
+
+root_body = []
+default_body = []
+other_sections = []
+
+for current_header, current_body in sections:
+    stripped_header = current_header.strip() if current_header else None
+    if current_header is None:
+        root_body = [line for line in current_body if not is_root_model_provider(line)]
+    elif stripped_header == "[model_providers.omniroute]":
+        continue
+    elif stripped_header == "[profiles.default]":
+        merge_default_lines(
+            default_body,
+            [line for line in current_body if not is_default_profile_key(line)]
+        )
+    else:
+        other_sections.append((current_header, current_body))
+
+while root_body and root_body[-1] == "":
+    root_body.pop()
+
+while default_body and default_body[0] == "":
+    default_body.pop(0)
+
+out = []
+if root_body:
+    out.extend(root_body)
+    out.append("")
+out.append('model_provider = "omniroute"')
+
+for current_header, current_body in other_sections:
+    if out and out[-1] != "":
+        out.append("")
+    out.append(current_header)
+    out.extend(current_body)
+
+if out and out[-1] != "":
+    out.append("")
+out.append("[profiles.default]")
+out.append('model_provider = "omniroute"')
+out.append(f"model = {json.dumps(model)}")
+out.extend(default_body)
+
+if out and out[-1] != "":
+    out.append("")
+out.append("[model_providers.omniroute]")
+out.append('name = "OmniRoute"')
+out.append(f"base_url = {json.dumps(base_url)}")
+out.append('wire_api = "responses"')
+out.append('env_key = "OMNIROUTE_API_KEY"')
+
+config_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+PY
+        then
+          warn "  Could not update ${CODEX_CONFIG} safely."
+          warn "  Skipping Codex config rewrite to avoid destroying custom TOML settings."
+          CODEX_CONFIG_WRITABLE=false
         fi
         if [ "${CODEX_CONFIG_WRITABLE}" = true ]; then
-          echo "" >> "${CODEX_CONFIG}"
-          echo "${PROVIDER_BLOCK}" >> "${CODEX_CONFIG}"
           say "  Written OmniRoute config to ${CODEX_CONFIG}"
         fi
+      elif [ -f "${CODEX_CONFIG}" ]; then
+        warn "  python3 is required to update existing Codex config safely."
+        warn "  Skipping Codex config rewrite to avoid destroying custom TOML settings."
+        CODEX_CONFIG_WRITABLE=false
       else
         echo "${PROVIDER_BLOCK}" > "${CODEX_CONFIG}"
         say "  Created ${CODEX_CONFIG}"

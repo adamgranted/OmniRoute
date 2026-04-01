@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_CONFIG } from "@/shared/constants/config";
 import {
-  deriveBootstrapToken,
   getBootstrapBaseUrl,
   injectBootstrapTemplate,
+  isBootstrapTokenMatch,
 } from "@/shared/utils/bootstrap";
 
 const SCRIPT_TEMPLATE = loadScript();
@@ -19,9 +19,7 @@ function loadScript(): string {
 
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const bootstrapToken = deriveBootstrapToken();
-
-  if (!bootstrapToken || token !== bootstrapToken) {
+  if (!isBootstrapTokenMatch(token)) {
     return new Response("Not found", { status: 404 });
   }
 
