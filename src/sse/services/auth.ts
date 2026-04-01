@@ -950,6 +950,10 @@ export function extractApiKey(request: Request) {
   if (authHeader?.startsWith("Bearer ")) {
     return authHeader.slice(7);
   }
+  const xApiKey = request.headers.get("x-api-key");
+  if (xApiKey) {
+    return xApiKey;
+  }
   return null;
 }
 

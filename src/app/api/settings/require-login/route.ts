@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { updateRequireLoginSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
+import { isAuthenticated } from "@/shared/utils/apiAuth";
 
 export async function GET() {
   try {
@@ -23,8 +24,25 @@ export async function GET() {
 /**
  * POST /api/settings/require-login — Set password and/or toggle requireLogin.
  * Used by the onboarding wizard security step.
+ *
+ * Auth: required AFTER initial setup. During first-run onboarding
+ * (setupComplete=false and no password set) the endpoint is open so the
+ * wizard can set the initial password.
  */
 export async function POST(request: Request) {
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    console.error("[API] Error reading settings for auth check:", error);
+    return NextResponse.json({ error: "Failed to read settings" }, { status: 500 });
+  }
+
+  const isFirstRun = !settings.setupComplete && !settings.password && !process.env.INITIAL_PASSWORD;
+  if (!isFirstRun && !(await isAuthenticated(request))) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   let rawBody;
   try {
     rawBody = await request.json();

@@ -35,9 +35,6 @@ const PUBLIC_API_ROUTES = [
   // LLM proxy routes — use their own API key auth in the SSE layer
   "/api/v1/",
 
-  // Cloud routes — use Bearer API key auth internally
-  "/api/cloud/",
-
   // OAuth callback routes — provider redirects back here
   "/api/oauth/",
 ];

@@ -10,6 +10,7 @@ process.env.DATA_DIR = TEST_DATA_DIR;
 const core = await import("../../src/lib/db/core.ts");
 const providersDb = await import("../../src/lib/db/providers.ts");
 const chatRoute = await import("../../src/app/api/v1/chat/completions/route.ts");
+const { buildInternalTestHeaders } = await import("../../src/shared/utils/internalTestAuth.ts");
 const {
   generateSignature,
   invalidateBySignature,
@@ -129,7 +130,7 @@ test("combo live test bypasses local cooldown and breaker state to perform a rea
   assert.equal(fetchCalls.length, 0);
 
   const liveResponse = await chatRoute.POST(
-    makeRequest({ "X-Internal-Test": "combo-health-check" })
+    makeRequest(buildInternalTestHeaders())
   );
   const liveBody = await liveResponse.json();
 
@@ -191,7 +192,7 @@ test("combo live test bypasses semantic cache and forces a fresh upstream reques
 
     const liveResponse = await chatRoute.POST(
       makeRequest({
-        "X-Internal-Test": "combo-health-check",
+        ...buildInternalTestHeaders(),
         "X-OmniRoute-No-Cache": "true",
         "X-Request-Id": "combo-test-cache-bypass",
       })

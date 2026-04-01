@@ -12,8 +12,38 @@ if (!process.env.JWT_SECRET) {
 }
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const loginAttempts = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const attempts = (loginAttempts.get(ip) || []).filter((t) => now - t < LOGIN_WINDOW_MS);
+  loginAttempts.set(ip, attempts);
+  return attempts.length >= LOGIN_MAX_ATTEMPTS;
+}
+
+function recordAttempt(ip: string): void {
+  const now = Date.now();
+  const attempts = (loginAttempts.get(ip) || []).filter((t) => now - t < LOGIN_WINDOW_MS);
+  attempts.push(now);
+  loginAttempts.set(ip, attempts);
+}
+
 export async function POST(request) {
   try {
+    const clientIp =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip") ||
+      "unknown";
+
+    if (isRateLimited(clientIp)) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Try again later." },
+        { status: 429 }
+      );
+    }
+
     // Fail-fast if JWT_SECRET is not configured
     if (!process.env.JWT_SECRET) {
       return NextResponse.json(
@@ -75,6 +105,7 @@ export async function POST(request) {
       return NextResponse.json({ success: true });
     }
 
+    recordAttempt(clientIp);
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   } catch (error) {
     console.error("[AUTH] Login failed:", error);
