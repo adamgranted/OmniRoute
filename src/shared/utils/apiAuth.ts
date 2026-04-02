@@ -10,6 +10,7 @@
 import { jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
+import { isPublicBootstrapScriptPath } from "@/shared/utils/bootstrap";
 
 // ──────────────── Public Routes (No Auth Required) ────────────────
 
@@ -127,7 +128,10 @@ export async function isAuthenticated(request: Request): Promise<boolean> {
  * Check if a route is in the public (no-auth) allowlist.
  */
 export function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route));
+  return (
+    PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route)) ||
+    isPublicBootstrapScriptPath(pathname)
+  );
 }
 
 /**

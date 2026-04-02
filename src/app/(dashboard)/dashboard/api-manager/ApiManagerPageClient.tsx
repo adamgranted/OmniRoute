@@ -112,6 +112,7 @@ export default function ApiManagerPageClient() {
   const [usageStats, setUsageStats] = useState<Record<string, KeyUsageStats>>({});
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [allowKeyReveal, setAllowKeyReveal] = useState(false);
+  const [bootstrapCurl, setBootstrapCurl] = useState<string | null>(null);
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -119,7 +120,18 @@ export default function ApiManagerPageClient() {
     fetchData();
     fetchModels();
     fetchConnections();
+    fetchBootstrapUrl();
   }, []);
+
+  const fetchBootstrapUrl = async () => {
+    try {
+      const res = await fetch("/api/bootstrap/url");
+      if (res.ok) {
+        const data = await res.json();
+        setBootstrapCurl(data.curl || null);
+      }
+    } catch {}
+  };
 
   const fetchModels = async () => {
     try {
@@ -703,6 +715,37 @@ export default function ApiManagerPageClient() {
           </div>
         )}
       </Card>
+
+      {/* Quick Setup Card */}
+      {bootstrapCurl && (
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-10 rounded-lg bg-purple-500/10 shrink-0">
+              <span className="material-symbols-outlined text-xl text-purple-500">terminal</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold mb-1">Quick Setup</h3>
+              <p className="text-sm text-text-muted mb-3">
+                Run this on any machine to interactively configure CLI tools to use this instance.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2.5 text-text-main truncate select-all">
+                  {bootstrapCurl}
+                </code>
+                <button
+                  onClick={() => copy(bootstrapCurl, "bootstrap_curl")}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors border border-purple-500/20"
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {copied === "bootstrap_curl" ? "check" : "content_copy"}
+                  </span>
+                  {copied === "bootstrap_curl" ? tc("copied") : tc("copy")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Usage Tips Card */}
       <Card>
