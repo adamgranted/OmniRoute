@@ -2,15 +2,26 @@ import { NextResponse } from "next/server";
 import { getProviderConnections, getSettings } from "@/lib/localDb";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { isAuthenticated } from "@/shared/utils/apiAuth";
 
 /**
  * GET /api/monitoring/health — System health overview
  *
- * Returns system info, provider health (circuit breakers),
- * rate limit status, and database stats.
+ * Unauthenticated: returns minimal status for container probes.
+ * Authenticated: returns full system info, provider health, rate limits.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authed = await isAuthenticated(request);
+
+    if (!authed) {
+      return NextResponse.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        version: APP_CONFIG.version,
+      });
+    }
+
     const { getAllCircuitBreakerStatuses } = await import("@/shared/utils/circuitBreaker");
     const { getAllRateLimitStatus } = await import("@omniroute/open-sse/services/rateLimitManager");
     const { getAllModelLockouts } = await import("@omniroute/open-sse/services/accountFallback");
@@ -23,7 +34,6 @@ export async function GET() {
     const lockouts = getAllModelLockouts();
     const { getAllHealthStatuses } = await import("@/lib/localHealthCheck");
 
-    // System info
     const system = {
       version: APP_CONFIG.version,
       nodeVersion: process.version,
@@ -33,10 +43,8 @@ export async function GET() {
       platform: process.platform,
     };
 
-    // Provider health summary (circuitBreakers is an Array of { name, state, ... })
     const providerHealth = {};
     for (const cb of circuitBreakers) {
-      // Skip test circuit breakers (leftover from unit tests)
       if (cb.name.startsWith("test-") || cb.name.startsWith("test_")) continue;
       providerHealth[cb.name] = {
         state: cb.state,
@@ -81,7 +89,10 @@ export async function GET() {
  * Resets all provider circuit breakers to CLOSED state,
  * clearing failure counts and persisted state.
  */
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  if (!(await isAuthenticated(request))) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   try {
     const { resetAllCircuitBreakers, getAllCircuitBreakerStatuses } =
       await import("@/shared/utils/circuitBreaker");

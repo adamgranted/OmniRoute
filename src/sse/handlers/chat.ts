@@ -45,6 +45,8 @@ import { generateRequestId } from "../../shared/utils/requestId";
 import { logAuditEvent } from "../../lib/compliance/index";
 import { enforceApiKeyPolicy } from "../../shared/utils/apiKeyPolicy";
 import { cloneLogPayload } from "@/lib/logPayloads";
+import { checkRequestIP } from "@omniroute/open-sse/services/ipFilter.ts";
+import { isInternalTestRequest } from "../../shared/utils/internalTestAuth";
 import {
   applyTaskAwareRouting,
   getTaskRoutingConfig,
@@ -68,6 +70,11 @@ import {
  * Format detection and translation handled by translator
  */
 export async function handleChat(request: any, clientRawRequest: any = null) {
+  const ipCheck = checkRequestIP(request);
+  if (!ipCheck.allowed) {
+    return errorResponse(HTTP_STATUS.FORBIDDEN, ipCheck.reason || "Access denied");
+  }
+
   // Pipeline: Start request telemetry
   const reqId = generateRequestId();
   const telemetry = new RequestTelemetry(reqId);
@@ -135,16 +142,16 @@ export async function handleChat(request: any, clientRawRequest: any = null) {
   );
 
   // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
+  if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
   // Optional strict API key mode for /v1 endpoints (require key on every request).
-  const isComboLiveTest = request.headers?.get?.("x-internal-test") === "combo-health-check";
+  // Internal combo health tests bypass API key checks via a per-process secret token.
+  const isComboLiveTest = isInternalTestRequest(request);
   if (process.env.REQUIRE_API_KEY === "true" && !isComboLiveTest) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key while REQUIRE_API_KEY=true");

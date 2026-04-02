@@ -4,6 +4,7 @@ import { buildComboTestRequestBody, extractComboTestResponseText } from "@/lib/c
 import { getComboByName } from "@/lib/localDb";
 import { testComboSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
+import { buildInternalTestHeaders } from "@/shared/utils/internalTestAuth";
 
 async function testComboModel(modelStr, internalUrl) {
   const startTime = Date.now();
@@ -21,11 +22,7 @@ async function testComboModel(modelStr, internalUrl) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Internal dashboard tests still use the normal /v1 pipeline but
-          // bypass REQUIRE_API_KEY so admins can test with local session auth.
-          "X-Internal-Test": "combo-health-check",
-          // Force a fresh execution path so combo tests cannot be satisfied by
-          // OmniRoute's semantic cache or other request reuse layers.
+          ...buildInternalTestHeaders(),
           "X-OmniRoute-No-Cache": "true",
           "X-Request-Id": `combo-test-${randomUUID()}`,
         },
