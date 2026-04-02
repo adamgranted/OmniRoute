@@ -180,6 +180,23 @@ escape_toml_basic_string() {
   printf '%s' "$value"
 }
 
+filter_out_profile_lines() {
+  local pattern="$1" input_file="$2" output_file="$3"
+  local status
+
+  if grep -v "$pattern" "$input_file" > "$output_file"; then
+    return 0
+  fi
+
+  status=$?
+  if [ "$status" -eq 1 ]; then
+    : > "$output_file"
+    return 0
+  fi
+
+  return "$status"
+}
+
 add_env_to_profile() {
   local var_name="$1" var_value="$2"
   local quoted_value
@@ -191,7 +208,7 @@ add_env_to_profile() {
   done
 
   if grep -q "^export ${var_name}=" "${PROFILE}" 2>/dev/null; then
-    grep -v "^export ${var_name}=" "${PROFILE}" > "${PROFILE}.omniroute-tmp"
+    filter_out_profile_lines "^export ${var_name}=" "${PROFILE}" "${PROFILE}.omniroute-tmp"
     mv "${PROFILE}.omniroute-tmp" "${PROFILE}"
   fi
   quoted_value="$(quote_for_shell_profile "${var_value}")"
@@ -229,7 +246,7 @@ for tool in "${SELECTED[@]}"; do
       # Clean up deprecated env vars from previous bootstrap runs
       for old_var in OPENAI_BASE_URL; do
         if grep -q "^export ${old_var}=" "${PROFILE}" 2>/dev/null; then
-          grep -v "^export ${old_var}=" "${PROFILE}" > "${PROFILE}.omniroute-tmp"
+          filter_out_profile_lines "^export ${old_var}=" "${PROFILE}" "${PROFILE}.omniroute-tmp"
           mv "${PROFILE}.omniroute-tmp" "${PROFILE}"
           say "  Removed deprecated ${old_var} from ${PROFILE}"
         fi
